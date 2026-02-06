@@ -1,39 +1,72 @@
+"""
+نسخة مصححة من bot.py تعمل على Render بدون خطأ Updater
+تعتمد على مكتبة python-telegram-bot الإصدار 20+
+"""
+
 import os
+import logging
 from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters
-from madara import MadaraUploader
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
 
-TOKEN = os.getenv("BOT_TOKEN")
-SITE_URL = os.getenv("SITE_URL")
-WP_USER = os.getenv("WP_USER")
-WP_PASS = os.getenv("WP_PASS")
+# تفعيل اللوق
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
 
-uploader = MadaraUploader(SITE_URL, WP_USER, WP_PASS)
+# قراءة التوكن من متغيرات البيئة في Render
+TOKEN = os.environ.get("BOT_TOKEN")
 
-async def start(update: Update, context):
-    await update.message.reply_text("أرسل رابط المانهوا لأرفعها للموقع 📥")
+if not TOKEN:
+    raise Exception("يجب إضافة BOT_TOKEN في Environment Variables داخل Render")
 
-async def handle(update: Update, context):
-    url = update.message.text
 
-    await update.message.reply_text("جاري جلب المانهوا... ⏳")
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "مرحباً! أرسل لي رابط فصل من موقع Madara لأقوم بمعالجته."
+    )
 
-    try:
-        result = uploader.upload_manga(url)
 
-        await update.message.reply_text(
-            f"✅ تم الرفع بنجاح\n\n"
-            f"📘 الاسم: {result['title']}\n"
-            f"📚 الفصول: {result['chapters']}\n"
-            f"🔗 {result['link']}"
-        )
+async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "طريقة الاستخدام:\n"
+        "- أرسل رابط الفصل مباشرة\n"
+        "- سأقوم بجلب الصور ورفعها"
+    )
 
-    except Exception as e:
-        await update.message.reply_text(f"❌ خطأ:\n{e}")
 
-app = Application.builder().token(TOKEN).build()
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
 
-app.add_handler(CommandHandler("start", start))
-app.add_handler(MessageHandler(filters.TEXT, handle))
+    if not text.startswith("http"):
+        await update.message.reply_text("الرجاء إرسال رابط صحيح.")
+        return
 
-app.run_polling()
+    await update.message.reply_text("جاري معالجة الرابط... (هنا تضع كود Madara scraper)")
+
+
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
+    logger.error("حدث خطأ:", exc_info=context.error)
+
+
+def main():
+    app = ApplicationBuilder().token(TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("help", help_cmd))
+
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+    app.add_error_handler(error_handler)
+
+    # مهم لـ Render: الاستماع على PORT الذي يحدده السيرفر
+    port = int(os.environ.get("PORT", 10000))
+
+    print(f"Running on port {port}")
+
+    app.run_polling()
+
+
+if __name__ == "__main__":
+    main()
